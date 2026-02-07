@@ -36,8 +36,7 @@
 
 <body>
     <div id="app"></div>
-
-  <script type="module">
+<script type="module">
 import { el } from "./mount.js";
 
 // Configuración de la API Base URL
@@ -109,40 +108,35 @@ async function apiCall(endpoint, method = "GET", body = null) {
  * Registrar nuevo usuario y negocio (tenant)
  * Endpoint: POST /register
  * 
+ * MODO 1: Self-Registration (crear nueva cuenta/tenant)
  * Request:
  * {
- *   "email": "user@example.com",
- *   "password": "password123",
- *   "nombre": "Juan Pérez",
- *   "nombre_negocio": "Mi Tienda"
+ *   "email": "owner@nuevonegocio.com",
+ *   "password": "SecurePass123!",
+ *   "company_name": "Mi Nuevo Negocio"
  * }
  * 
- * Response:
+ * Response 201:
  * {
- *   "access_token": "eyJhbGc...",
- *   "refresh_token": "a1b2c3d4...",
- *   "user": { id, email, nombre, tenant_id, role },
- *   "expires_in": 28800
+ *   "id": "user-123",
+ *   "email": "owner@nuevonegocio.com",
+ *   "role": "owner",
+ *   "tenant_id": "1707264123456-abc123",
+ *   "tenant_name": "Mi Nuevo Negocio",
+ *   "message": "User registered successfully"
  * }
+ * 
+ * IMPORTANTE: El registro NO retorna tokens. Debes hacer login después.
  */
-async function register(email, password, nombre, negocio) {
+async function register(email, password, companyName) {
   const data = await apiCall("/register", "POST", {
     email,
     password,
-    nombre,
-    nombre_negocio: negocio
+    company_name: companyName
   });
 
-  // Actualizar estado global con los tokens y datos del usuario
-  authState = {
-    access: data.access_token,
-    refresh: data.refresh_token,
-    user: data.user
-  };
-
-  // Guardar refresh token en localStorage (seguro)
-  setStoredRefresh(data.refresh_token);
-
+  // El endpoint de registro NO retorna tokens
+  // Solo retorna información del usuario creado
   return data;
 }
 
@@ -503,17 +497,16 @@ function renderRegister() {
             const form = new FormData(e.target);
             const email = form.get("email");
             const password = form.get("password");
-            const nombre = form.get("nombre");
-            const negocio = form.get("negocio");
+            const companyName = form.get("company_name");
 
-            if (!email || !password || !nombre || !negocio) {
+            if (!email || !password || !companyName) {
               error = "Todos los campos son requeridos";
               updateError();
               return;
             }
 
-            if (password.length < 6) {
-              error = "La contraseña debe tener al menos 6 caracteres";
+            if (password.length < 8) {
+              error = "La contraseña debe tener al menos 8 caracteres";
               updateError();
               return;
             }
@@ -523,7 +516,14 @@ function renderRegister() {
             button.textContent = "Registrando...";
 
             try {
-              await register(email, password, nombre, negocio);
+              // Registrar usuario (no retorna tokens)
+              await register(email, password, companyName);
+              
+              // Hacer login automáticamente después del registro
+              button.textContent = "Iniciando sesión...";
+              await login(email, password);
+              
+              // Redirigir al dashboard
               window.location.href = "dashboard.html";
             } catch (err) {
               error = err.message;
@@ -542,30 +542,11 @@ function renderRegister() {
               }
             },
             [
-              el("label", { for: "nombre" }, "Nombre Completo"),
+              el("label", { for: "company_name" }, "Nombre del Negocio"),
               el("input", {
                 type: "text",
-                id: "nombre",
-                name: "nombre",
-                placeholder: "Juan Pérez",
-                required: true,
-                autocomplete: "name"
-              })
-            ]
-          ),
-          el(
-            "div",
-            {
-              style: {
-                marginBottom: "var(--space-4)"
-              }
-            },
-            [
-              el("label", { for: "negocio" }, "Nombre del Negocio"),
-              el("input", {
-                type: "text",
-                id: "negocio",
-                name: "negocio",
+                id: "company_name",
+                name: "company_name",
                 placeholder: "Mi Empresa SA",
                 required: true
               })
@@ -606,7 +587,7 @@ function renderRegister() {
                 placeholder: "••••••••",
                 required: true,
                 autocomplete: "new-password",
-                minlength: "6"
+                minlength: "8"
               })
             ]
           ),
@@ -666,5 +647,6 @@ function renderRegister() {
 // Verificar autenticación al cargar y luego mostrar login si no está autenticado
 checkAuth().then(() => renderLogin());
 </script>
+
 </body>
 </html>
