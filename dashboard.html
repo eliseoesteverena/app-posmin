@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="m.css" />
+</head>
+
+<body>
+    <div id="app"></div>
+
+    <script type="module">
+        import { el } from "./mount.js";
+
+        const API_BASE = window.location.hostname.includes("localhost")
+            ? "http://localhost:8787"
+            : "https://posmin-auth-service.eliseo050595.workers.dev";
+
+        let authState = {
+            access: null,
+            refresh: null,
+            user: null
+        };
+
+        function getStoredRefresh() {
+            return localStorage.getItem("refresh_token");
+        }
+
+        function setStoredRefresh(token) {
+            if (token) {
+                localStorage.setItem("refresh_token", token);
+            } else {
+                localStorage.removeItem("refresh_token");
+            }
+        }
+
+        async function apiCall(endpoint, method = "GET", body = null) {
+            const options = {
+                method,
+                headers: {
+                    "Content-Type": "application/json"
+                }
+            };
+
+            if (authState.access) {
+                options.headers.Authorization = `Bearer ${authState.access}`;
+            }
+
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+
+            const response = await fetch(`${API_BASE}${endpoint}`, options);
+
+            if (response.status === 401 && endpoint !== "/auth/refresh") {
+                try {
+                    await refreshToken();
+
+                    const retry = await fetch(`${API_BASE}${endpoint}`, {
+                        ...options,
+                        headers: {
+                            ...options.headers,
+                            Authorization: `Bearer ${authState.access}`
+                        }
+                    });
+
+                    if (!retry.ok) {
+                        const error = await retry.json().catch(() => ({
+                            error: "Error desconocido"
+                        }));
+
+                        throw new Error(
+                            error.error || error.message || "Error en la petición"
+                        );
+                    }
+
+                    return retry.json();
+                } catch (err) {
+                    logout();
+                    return null;
+                }
+            }
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({
+                    error: "Error desconocido"
+                }));
+
+                throw new Error(
+                    error.error || error.message || "Error en la petición"
+                );
+            }
+
+            return response.json();
+        }
+
+        async function refreshToken() {
+            const refresh = getStoredRefresh();
+
+            if (!refresh) {
+                throw new Error("No hay refresh token");
+            }
+
+            const data = await apiCall("/auth/refresh", "POST", {
+                refresh_token: refresh
+            });
+
+            authState.access = data.access_token;
+            authState.refresh = data.refresh_token;
+
+            setStoredRefresh(data.refresh_token);
+
+            return data;
+        }
+
+        function logout() {
+            authState = {
+                access: null,
+                refresh: null,
+                user: null
+            };
+
+            setStoredRefresh(null);
+            window.location.href = "index.html";
+        }
+
+        async function initAuth() {
+            const refresh = getStoredRefresh();
+
+            if (!refresh) {
+                logout();
+                return;
+            }
+
+            try {
+                const data = await refreshToken();
+
+                authState.user = data.user || {
+                    email: "usuario@example.com"
+                };
+
+                renderDashboard();
+            } catch (err) {
+                logout();
+            }
+        }
+
+        function renderDashboard() {
+            const app = document.getElementById("app");
+
+            app.innerHTML = "";
+
+            const layout = el("div", {
+                style: { minHeight: "100vh" }
+            }, [
+
+                el("nav", {
+                    style: {
+                        backgroundColor: "var(--color-primary)",
+                        padding: "var(--space-4)",
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+                    }
+                }, [
+
+                    el("div", {
+                        style: {
+                            maxWidth: "1200px",
+                            margin: "0 auto",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                        }
+                    }, [
+
+                        el("h1", {
+                            style: {
+                                color: "var(--color-white)",
+                                fontSize: "var(--font-2xl)",
+                                fontWeight: "700",
+                                margin: "0"
+                            }
+                        }, "Dashboard"),
+
+                        el("button", {
+                            onclick: () => logout(),
+                            style: {
+                                backgroundColor: "var(--color-primary-dark)"
+                            }
+                        }, "Cerrar Sesión")
+
+                    ])
+
+                ]),
+
+                el("main", {
+                    style: {
+                        maxWidth: "1200px",
+                        margin: "var(--space-8) auto",
+                        padding: "0 var(--space-4)"
+                    }
+                }, [
+
+                    el("div", {
+                        style: {
+                            backgroundColor: "var(--color-white)",
+                            padding: "var(--space-8)",
+                            borderRadius: "var(--radius-lg)",
+                            boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+                        }
+                    }, [
+
+                        el("h2", {
+                            style: {
+                                fontSize: "var(--font-3xl)",
+                                fontWeight: "700",
+                                marginBottom: "var(--space-4)",
+                                color: "var(--color-primary)"
+                            }
+                        }, "Bienvenido"),
+
+                        el("div", {
+                            style: {
+                                backgroundColor: "var(--color-primary-light)",
+                                padding: "var(--space-6)",
+                                borderRadius: "var(--radius-md)",
+                                marginBottom: "var(--space-6)"
+                            }
+                        }, [
+
+                            el("p", {
+                                style: {
+                                    fontSize: "var(--font-lg)",
+                                    color: "var(--color-gray-700)",
+                                    marginBottom: "var(--space-2)"
+                                }
+                            }, [
+                                el("strong", {}, "Email: "),
+                                authState.user?.email || "Cargando..."
+                            ]),
+
+                            el("p", {
+                                style: {
+                                    fontSize: "var(--font-base)",
+                                    color: "var(--color-gray-500)"
+                                }
+                            }, "Autenticación exitosa con refresh token automático")
+
+                        ]),
+
+                        el("div", {
+                            style: {
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                                gap: "var(--space-4)"
+                            }
+                        }, [
+
+                            buildFeature("✓ Login", "Sistema de autenticación completo"),
+                            buildFeature("✓ Registro", "Creación de nuevas cuentas"),
+                            buildFeature("✓ Refresh", "Renovación automática de tokens")
+
+                        ])
+
+                    ])
+
+                ])
+
+            ]);
+
+            app.appendChild(layout);
+        }
+
+        function buildFeature(title, text) {
+            return el("div", {
+                style: {
+                    backgroundColor: "var(--color-gray-50)",
+                    padding: "var(--space-6)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--color-gray-200)"
+                }
+            }, [
+
+                el("h3", {
+                    style: {
+                        fontSize: "var(--font-xl)",
+                        fontWeight: "600",
+                        marginBottom: "var(--space-2)",
+                        color: "var(--color-primary)"
+                    }
+                }, title),
+
+                el("p", {
+                    style: {
+                        fontSize: "var(--font-sm)",
+                        color: "var(--color-gray-600)"
+                    }
+                }, text)
+
+            ]);
+        }
+
+        let refreshInterval;
+
+        async function startTokenRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+
+            refreshInterval = setInterval(async () => {
+                try {
+                    await refreshToken();
+                    console.log("Token renovado automáticamente");
+                } catch (err) {
+                    console.error("Error al renovar token:", err);
+                    logout();
+                }
+            }, 42e5);
+        }
+
+        initAuth().then(() => startTokenRefresh());
+    </script>
+</body>
+</html>
