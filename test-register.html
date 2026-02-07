@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test de Registro - Debug</title>
+  <style>
+    body {
+      font-family: monospace;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    .section {
+      background: #f5f5f5;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+    }
+    input, button {
+      display: block;
+      width: 100%;
+      margin: 10px 0;
+      padding: 10px;
+      font-size: 16px;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    .success {
+      background: #d4edda;
+      color: #155724;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .error {
+      background: #f8d7da;
+      color: #721c24;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .info {
+      background: #d1ecf1;
+      color: #0c5460;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    pre {
+      background: #000;
+      color: #0f0;
+      padding: 15px;
+      overflow-x: auto;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 Debug - Endpoint de Registro</h1>
+
+  <!-- Configuración -->
+  <div class="section">
+    <h2>1. Configuración</h2>
+    <label>Worker URL:</label>
+    <input type="text" id="workerUrl" value="http://localhost:8787">
+    <button onclick="testHealth()">Test Health Check</button>
+    <div id="healthResult"></div>
+  </div>
+
+  <!-- Formulario de Registro -->
+  <div class="section">
+    <h2>2. Registro de Usuario</h2>
+    <label>Email:</label>
+    <input type="email" id="email" value="test@example.com">
+    
+    <label>Password:</label>
+    <input type="password" id="password" value="SecurePass123!">
+    
+    <label>Tenant ID:</label>
+    <input type="text" id="tenantId" value="tenant-1">
+    
+    <label>Role (opcional):</label>
+    <select id="role">
+      <option value="">-- Default (cashier) --</option>
+      <option value="owner">owner</option>
+      <option value="admin">admin</option>
+      <option value="cashier">cashier</option>
+      <option value="viewer">viewer</option>
+    </select>
+
+    <button onclick="testRegister()">Registrar Usuario</button>
+    <div id="registerResult"></div>
+  </div>
+
+  <!-- Request Details -->
+  <div class="section">
+    <h2>3. Request que se enviará</h2>
+    <div class="info">
+      <strong>URL:</strong> <span id="requestUrl"></span><br>
+      <strong>Method:</strong> POST<br>
+      <strong>Headers:</strong> Content-Type: application/json
+    </div>
+    <pre id="requestBody"></pre>
+  </div>
+
+  <!-- Response Details -->
+  <div class="section">
+    <h2>4. Response del servidor</h2>
+    <div class="info">
+      <strong>Status:</strong> <span id="responseStatus"></span><br>
+      <strong>Status Text:</strong> <span id="responseStatusText"></span>
+    </div>
+    <pre id="responseBody"></pre>
+  </div>
+
+  <!-- Tests Pre-configurados -->
+  <div class="section">
+    <h2>5. Tests Rápidos</h2>
+    <button onclick="testValidRegistration()">✅ Test: Registro Válido</button>
+    <button onclick="testMissingFields()">❌ Test: Campos Faltantes</button>
+    <button onclick="testWeakPassword()">❌ Test: Password Débil</button>
+    <button onclick="testInvalidRole()">❌ Test: Rol Inválido</button>
+    <div id="quickTestResult"></div>
+  </div>
+
+  <script>
+    function getWorkerUrl() {
+      return document.getElementById('workerUrl').value;
+    }
+
+    function updateRequestPreview() {
+      const body = {
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value,
+        tenant_id: document.getElementById('tenantId').value
+      };
+
+      const role = document.getElementById('role').value;
+      if (role) {
+        body.role = role;
+      }
+
+      document.getElementById('requestUrl').textContent = getWorkerUrl() + '/auth/register';
+      document.getElementById('requestBody').textContent = JSON.stringify(body, null, 2);
+    }
+
+    async function testHealth() {
+      const resultDiv = document.getElementById('healthResult');
+      resultDiv.innerHTML = '<div class="info">Verificando...</div>';
+
+      try {
+        const response = await fetch(getWorkerUrl() + '/health');
+        const data = await response.json();
+
+        if (response.ok) {
+          resultDiv.innerHTML = `<div class="success">✅ Worker está funcionando<br>Timestamp: ${data.timestamp}</div>`;
+        } else {
+          resultDiv.innerHTML = `<div class="error">❌ Worker respondió con error ${response.status}</div>`;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `<div class="error">❌ Error de conexión: ${error.message}<br><br>Verifica que el worker esté corriendo en ${getWorkerUrl()}</div>`;
+      }
+    }
+
+    async function testRegister() {
+      updateRequestPreview();
+      
+      const resultDiv = document.getElementById('registerResult');
+      resultDiv.innerHTML = '<div class="info">Enviando request...</div>';
+
+      const body = {
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value,
+        tenant_id: document.getElementById('tenantId').value
+      };
+
+      const role = document.getElementById('role').value;
+      if (role) {
+        body.role = role;
+      }
+
+      try {
+        const response = await fetch(getWorkerUrl() + '/auth/register', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+
+        const data = await response.json();
+
+        // Update response details
+        document.getElementById('responseStatus').textContent = response.status;
+        document.getElementById('responseStatusText').textContent = response.statusText;
+        document.getElementById('responseBody').textContent = JSON.stringify(data, null, 2);
+
+        if (response.ok) {
+          resultDiv.innerHTML = `
+            <div class="success">
+              ✅ Usuario registrado exitosamente<br>
+              ID: ${data.id}<br>
+              Email: ${data.email}<br>
+              Role: ${data.role}<br>
+              Tenant: ${data.tenant_id}
+            </div>
+          `;
+        } else {
+          resultDiv.innerHTML = `
+            <div class="error">
+              ❌ Error ${response.status}: ${data.error}<br>
+              ${JSON.stringify(data, null, 2)}
+            </div>
+          `;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+        document.getElementById('responseStatus').textContent = 'Error';
+        document.getElementById('responseStatusText').textContent = error.message;
+        document.getElementById('responseBody').textContent = error.stack;
+      }
+    }
+
+    async function testValidRegistration() {
+      const resultDiv = document.getElementById('quickTestResult');
+      resultDiv.innerHTML = '<div class="info">Test en progreso...</div>';
+
+      try {
+        const randomEmail = `test${Date.now()}@example.com`;
+        const response = await fetch(getWorkerUrl() + '/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: randomEmail,
+            password: 'ValidPass123!',
+            tenant_id: 'tenant-1',
+            role: 'cashier'
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.status === 201) {
+          resultDiv.innerHTML = `<div class="success">✅ PASS: Registro válido funcionó correctamente</div>`;
+        } else {
+          resultDiv.innerHTML = `<div class="error">❌ FAIL: Se esperaba 201, se obtuvo ${response.status}<br>${JSON.stringify(data)}</div>`;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `<div class="error">❌ ERROR: ${error.message}</div>`;
+      }
+    }
+
+    async function testMissingFields() {
+      const resultDiv = document.getElementById('quickTestResult');
+      resultDiv.innerHTML = '<div class="info">Test en progreso...</div>';
+
+      try {
+        const response = await fetch(getWorkerUrl() + '/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: 'test@example.com',
+            password: 'ValidPass123!'
+            // tenant_id faltante
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.status === 400 && data.error.includes('required')) {
+          resultDiv.innerHTML = `<div class="success">✅ PASS: Error 400 por campos faltantes</div>`;
+        } else {
+          resultDiv.innerHTML = `<div class="error">❌ FAIL: Se esperaba 400, se obtuvo ${response.status}</div>`;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `<div class="error">❌ ERROR: ${error.message}</div>`;
+      }
+    }
+
+    async function testWeakPassword() {
+      const resultDiv = document.getElementById('quickTestResult');
+      resultDiv.innerHTML = '<div class="info">Test en progreso...</div>';
+
+      try {
+        const response = await fetch(getWorkerUrl() + '/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: 'test@example.com',
+            password: 'weak',
+            tenant_id: 'tenant-1'
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.status === 400 && data.error.includes('Password')) {
+          resultDiv.innerHTML = `<div class="success">✅ PASS: Error 400 por password débil</div>`;
+        } else {
+          resultDiv.innerHTML = `<div class="error">❌ FAIL: Se esperaba 400, se obtuvo ${response.status}</div>`;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `<div class="error">❌ ERROR: ${error.message}</div>`;
+      }
+    }
+
+    async function testInvalidRole() {
+      const resultDiv = document.getElementById('quickTestResult');
+      resultDiv.innerHTML = '<div class="info">Test en progreso...</div>';
+
+      try {
+        const response = await fetch(getWorkerUrl() + '/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: 'test@example.com',
+            password: 'ValidPass123!',
+            tenant_id: 'tenant-1',
+            role: 'superadmin'
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.status === 400 && data.error.includes('role')) {
+          resultDiv.innerHTML = `<div class="success">✅ PASS: Error 400 por rol inválido</div>`;
+        } else {
+          resultDiv.innerHTML = `<div class="error">❌ FAIL: Se esperaba 400, se obtuvo ${response.status}</div>`;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `<div class="error">❌ ERROR: ${error.message}</div>`;
+      }
+    }
+
+    // Auto-update preview
+    document.getElementById('email').addEventListener('input', updateRequestPreview);
+    document.getElementById('password').addEventListener('input', updateRequestPreview);
+    document.getElementById('tenantId').addEventListener('input', updateRequestPreview);
+    document.getElementById('role').addEventListener('change', updateRequestPreview);
+
+    // Initial preview
+    updateRequestPreview();
+  </script>
+</body>
+</html>
