@@ -37,461 +37,634 @@
 <body>
     <div id="app"></div>
 
-    <script type="module">
-        import { el } from "./mount.js";
-
-        const API_BASE = window.location.hostname.includes("localhost")
-            ? "http://localhost:8787"
-            : "https://posmin-auth-service.eliseo050595.workers.dev";
-
-        let authState = {
-            access: null,
-            refresh: null,
-            user: null
-        };
-
-        function getStoredRefresh() {
-            return localStorage.getItem("refresh_token");
-        }
-
-        function setStoredRefresh(token) {
-            if (token) {
-                localStorage.setItem("refresh_token", token);
-            } else {
-                localStorage.removeItem("refresh_token");
-            }
-        }
-
-        async function apiCall(endpoint, method = "GET", body = null) {
-            const options = {
-                method,
-                headers: {
-                    "Content-Type": "application/json"
-                }
-            };
-
-            if (authState.access) {
-                options.headers.Authorization = `Bearer ${authState.access}`;
-            }
-
-            if (body) {
-                options.body = JSON.stringify(body);
-            }
-
-            const response = await fetch(`${API_BASE}${endpoint}`, options);
-
-            if (!response.ok) {
-                const error = await response.json().catch(() => ({
-                    error: "Error desconocido"
-                }));
-
-                throw new Error(
-                    error.error || error.message || "Error en la petición"
-                );
-            }
-
-            return response.json();
-        }
-
-        async function register(email, password, nombre, negocio) {
-            const data = await apiCall("/auth/register", "POST", {
-                email,
-                password,
-                nombre,
-                nombre_negocio: negocio
-            });
-
-            authState = {
-                access: data.access_token,
-                refresh: data.refresh_token,
-                user: data.user
-            };
-
-            setStoredRefresh(data.refresh_token);
-
-            return data;
-        }
-
-        async function login(email, password) {
-            const data = await apiCall("/auth/login", "POST", {
-                email,
-                password
-            });
-
-            authState = {
-                access: data.access_token,
-                refresh: data.refresh_token,
-                user: data.user
-            };
-
-            setStoredRefresh(data.refresh_token);
-
-            return data;
-        }
-
-        async function refreshToken() {
-            const refresh = getStoredRefresh();
-
-            if (!refresh) {
-                throw new Error("No hay refresh token");
-            }
-
-            const data = await apiCall("/auth/refresh", "POST", {
-                refresh_token: refresh
-            });
-
-            authState.access = data.access_token;
-            authState.refresh = data.refresh_token;
-
-            setStoredRefresh(data.refresh_token);
-
-            return data;
-        }
-
-        async function checkAuth() {
-            const refresh = getStoredRefresh();
-
-            if (refresh) {
-                try {
-                    await refreshToken();
-                    window.location.href = "dashboard.html";
-                } catch (err) {
-                    authState = {
-                        access: null,
-                        refresh: null,
-                        user: null
-                    };
-
-                    setStoredRefresh(null);
-                }
-            }
-        }
-
-        function renderLogin() {
-            const app = document.getElementById("app");
-
-            app.innerHTML = "";
-
-            let error = "";
-
-            const container = el("div", {
-                style: {
-                    backgroundColor: "var(--color-white)",
-                    padding: "var(--space-8)",
-                    borderRadius: "var(--radius-lg)",
-                    boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
-                    maxWidth: "400px",
-                    width: "100%"
-                }
-            }, [
-
-                el("h1", {
-                    style: {
-                        fontSize: "var(--font-3xl)",
-                        fontWeight: "700",
-                        marginBottom: "var(--space-2)",
-                        textAlign: "center",
-                        color: "var(--color-primary)"
-                    }
-                }, "Iniciar Sesión"),
-
-                el("p", {
-                    style: {
-                        textAlign: "center",
-                        color: "var(--color-gray-500)",
-                        marginBottom: "var(--space-6)",
-                        fontSize: "var(--font-sm)"
-                    }
-                }, "Accede a tu cuenta"),
-
-                el("form", {
-                    id: "loginForm",
-                    onsubmit: async e => {
-                        e.preventDefault();
-
-                        const form = new FormData(e.target);
-
-                        const email = form.get("email");
-                        const password = form.get("password");
-
-                        if (!email || !password) {
-                            error = "Email y contraseña son requeridos";
-                            updateError();
-                            return;
-                        }
-
-                        const button = document.querySelector("button[type=submit]");
-
-                        button.disabled = true;
-                        button.textContent = "Iniciando...";
-
-                        try {
-                            await login(email, password);
-                            window.location.href = "dashboard.html";
-                        } catch (err) {
-                            error = err.message;
-                            updateError();
-
-                            button.disabled = false;
-                            button.textContent = "Iniciar Sesión";
-                        }
-                    }
-                }, [
-
-                    el("div", {
-                        style: {
-                            marginBottom: "var(--space-4)"
-                        }
-                    }, [
-
-                        el("label", { for: "email" }, "Email"),
-
-                        el("input", {
-                            type: "email",
-                            id: "email",
-                            name: "email",
-                            placeholder: "tu@email.com",
-                            required: true,
-                            autocomplete: "email"
-                        })
-
-                    ]),
-
-                    el("div", {
-                        style: {
-                            marginBottom: "var(--space-4)"
-                        }
-                    }, [
-
-                        el("label", { for: "password" }, "Contraseña"),
-
-                        el("input", {
-                            type: "password",
-                            id: "password",
-                            name: "password",
-                            placeholder: "••••••••",
-                            required: true,
-                            autocomplete: "current-password"
-                        })
-
-                    ]),
-
-                    el("div", { id: "errorMsg" }),
-
-                    el("button", { type: "submit" }, "Iniciar Sesión")
-
-                ]),
-
-                el("div", {
-                    style: {
-                        marginTop: "var(--space-4)",
-                        textAlign: "center"
-                    }
-                }, [
-
-                    el("span", {
-                        style: {
-                            fontSize: "var(--font-sm)",
-                            color: "var(--color-gray-500)"
-                        }
-                    }, "¿No tienes cuenta? "),
-
-                    el("span", {
-                        className: "link",
-                        onclick: () => renderRegister()
-                    }, "Regístrate")
-
-                ])
-
-            ]);
-
-            function updateError() {
-                const box = document.getElementById("errorMsg");
-
-                box.innerHTML = "";
-
-                if (error) {
-                    box.className = "error";
-                    box.textContent = error;
-                }
-            }
-
-            app.appendChild(container);
-            updateError();
-        }
-
-        function renderRegister() {
-            const app = document.getElementById("app");
-
-            app.innerHTML = "";
-
-            let error = "";
-
-            const container = el("div", {
-                style: {
-                    backgroundColor: "var(--color-white)",
-                    padding: "var(--space-8)",
-                    borderRadius: "var(--radius-lg)",
-                    boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
-                    maxWidth: "400px",
-                    width: "100%"
-                }
-            }, [
-
-                el("h1", {
-                    style: {
-                        fontSize: "var(--font-3xl)",
-                        fontWeight: "700",
-                        marginBottom: "var(--space-2)",
-                        textAlign: "center",
-                        color: "var(--color-primary)"
-                    }
-                }, "Crear Cuenta"),
-
-                el("p", {
-                    style: {
-                        textAlign: "center",
-                        color: "var(--color-gray-500)",
-                        marginBottom: "var(--space-6)",
-                        fontSize: "var(--font-sm)"
-                    }
-                }, "Regístrate para comenzar"),
-
-                el("form", {
-                    id: "registerForm",
-                    onsubmit: async e => {
-                        e.preventDefault();
-
-                        const form = new FormData(e.target);
-
-                        const email = form.get("email");
-                        const password = form.get("password");
-                        const nombre = form.get("nombre");
-                        const negocio = form.get("negocio");
-
-                        if (!email || !password || !nombre || !negocio) {
-                            error = "Todos los campos son requeridos";
-                            updateError();
-                            return;
-                        }
-
-                        if (password.length < 6) {
-                            error = "La contraseña debe tener al menos 6 caracteres";
-                            updateError();
-                            return;
-                        }
-
-                        const button = document.querySelector("button[type=submit]");
-
-                        button.disabled = true;
-                        button.textContent = "Registrando...";
-
-                        try {
-                            await register(email, password, nombre, negocio);
-                            window.location.href = "dashboard.html";
-                        } catch (err) {
-                            error = err.message;
-                            updateError();
-
-                            button.disabled = false;
-                            button.textContent = "Crear Cuenta";
-                        }
-                    }
-                }, [
-
-                    el("div", { style: { marginBottom: "var(--space-4)" } }, [
-                        el("label", { for: "nombre" }, "Nombre Completo"),
-                        el("input", {
-                            type: "text",
-                            id: "nombre",
-                            name: "nombre",
-                            placeholder: "Juan Pérez",
-                            required: true,
-                            autocomplete: "name"
-                        })
-                    ]),
-
-                    el("div", { style: { marginBottom: "var(--space-4)" } }, [
-                        el("label", { for: "negocio" }, "Nombre del Negocio"),
-                        el("input", {
-                            type: "text",
-                            id: "negocio",
-                            name: "negocio",
-                            placeholder: "Mi Empresa SA",
-                            required: true
-                        })
-                    ]),
-
-                    el("div", { style: { marginBottom: "var(--space-4)" } }, [
-                        el("label", { for: "email" }, "Email"),
-                        el("input", {
-                            type: "email",
-                            id: "email",
-                            name: "email",
-                            placeholder: "tu@email.com",
-                            required: true,
-                            autocomplete: "email"
-                        })
-                    ]),
-
-                    el("div", { style: { marginBottom: "var(--space-4)" } }, [
-                        el("label", { for: "password" }, "Contraseña"),
-                        el("input", {
-                            type: "password",
-                            id: "password",
-                            name: "password",
-                            placeholder: "••••••••",
-                            required: true,
-                            autocomplete: "new-password",
-                            minlength: "6"
-                        })
-                    ]),
-
-                    el("div", { id: "errorMsg" }),
-
-                    el("button", { type: "submit" }, "Crear Cuenta")
-
-                ]),
-
-                el("div", {
-                    style: {
-                        marginTop: "var(--space-4)",
-                        textAlign: "center"
-                    }
-                }, [
-
-                    el("span", {
-                        style: {
-                            fontSize: "var(--font-sm)",
-                            color: "var(--color-gray-500)"
-                        }
-                    }, "¿Ya tienes cuenta? "),
-
-                    el("span", {
-                        className: "link",
-                        onclick: () => renderLogin()
-                    }, "Inicia Sesión")
-
-                ])
-
-            ]);
-
-            function updateError() {
-                const box = document.getElementById("errorMsg");
-
-                box.innerHTML = "";
-
-                if (error) {
-                    box.className = "error";
-                    box.textContent = error;
-                }
+  <script type="module">
+import { el } from "./mount.js";
+
+// Configuración de la API Base URL
+const API_BASE = window.location.hostname.includes("localhost")
+  ? "http://localhost:8787"
+  : "https://posmin-auth-service.eliseo050595.workers.dev";
+
+// Estado de autenticación en memoria
+let authState = {
+  access: null,
+  refresh: null,
+  user: null
+};
+
+// ============================================================================
+// GESTIÓN DE REFRESH TOKEN EN LOCALSTORAGE
+// ============================================================================
+
+function getStoredRefresh() {
+  return localStorage.getItem("refresh_token");
+}
+
+function setStoredRefresh(token) {
+  if (token) {
+    localStorage.setItem("refresh_token", token);
+  } else {
+    localStorage.removeItem("refresh_token");
+  }
+}
+
+// ============================================================================
+// FUNCIÓN GENÉRICA PARA LLAMADAS A LA API
+// ============================================================================
+
+async function apiCall(endpoint, method = "GET", body = null) {
+  const options = {
+    method,
+    headers: {
+      "Content-Type": "application/json"
+    }
+  };
+
+  // Agregar Authorization header si hay access token
+  if (authState.access) {
+    options.headers.Authorization = `Bearer ${authState.access}`;
+  }
+
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${API_BASE}${endpoint}`, options);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      error: "Error desconocido"
+    }));
+    throw new Error(error.error || error.message || "Error en la petición");
+  }
+
+  return response.json();
+}
+
+// ============================================================================
+// AUTENTICACIÓN - ADAPTADO A NUEVA API
+// ============================================================================
+
+/**
+ * Registrar nuevo usuario y negocio (tenant)
+ * Endpoint: POST /register
+ * 
+ * Request:
+ * {
+ *   "email": "user@example.com",
+ *   "password": "password123",
+ *   "nombre": "Juan Pérez",
+ *   "nombre_negocio": "Mi Tienda"
+ * }
+ * 
+ * Response:
+ * {
+ *   "access_token": "eyJhbGc...",
+ *   "refresh_token": "a1b2c3d4...",
+ *   "user": { id, email, nombre, tenant_id, role },
+ *   "expires_in": 28800
+ * }
+ */
+async function register(email, password, nombre, negocio) {
+  const data = await apiCall("/register", "POST", {
+    email,
+    password,
+    nombre,
+    nombre_negocio: negocio
+  });
+
+  // Actualizar estado global con los tokens y datos del usuario
+  authState = {
+    access: data.access_token,
+    refresh: data.refresh_token,
+    user: data.user
+  };
+
+  // Guardar refresh token en localStorage (seguro)
+  setStoredRefresh(data.refresh_token);
+
+  return data;
+}
+
+/**
+ * Iniciar sesión
+ * Endpoint: POST /login
+ * 
+ * Request:
+ * {
+ *   "email": "user@example.com",
+ *   "password": "password123"
+ * }
+ * 
+ * Response:
+ * {
+ *   "access_token": "eyJhbGc...",
+ *   "refresh_token": "a1b2c3d4...",
+ *   "user": { id, email, nombre, tenant_id, role },
+ *   "expires_in": 28800
+ * }
+ */
+async function login(email, password) {
+  const data = await apiCall("/login", "POST", {
+    email,
+    password
+  });
+
+  // Actualizar estado global con los tokens y datos del usuario
+  authState = {
+    access: data.access_token,
+    refresh: data.refresh_token,
+    user: data.user
+  };
+
+  // Guardar refresh token en localStorage
+  setStoredRefresh(data.refresh_token);
+
+  return data;
+}
+
+/**
+ * Refrescar access token usando refresh token
+ * Endpoint: POST /refresh
+ * 
+ * IMPORTANTE: Con la nueva API, cada refresh genera un NUEVO refresh token
+ * (Refresh Token Rotation). Debes actualizar AMBOS tokens.
+ * 
+ * Request:
+ * {
+ *   "refresh_token": "a1b2c3d4..."
+ * }
+ * 
+ * Response:
+ * {
+ *   "access_token": "eyJhbGc... (NUEVO)",
+ *   "refresh_token": "x1y2z3... (NUEVO - diferente al enviado)",
+ *   "user": { id, email, nombre, tenant_id, role },
+ *   "expires_in": 28800
+ * }
+ */
+async function refreshToken() {
+  const refresh = getStoredRefresh();
+  
+  if (!refresh) {
+    throw new Error("No hay refresh token");
+  }
+
+  const data = await apiCall("/refresh", "POST", {
+    refresh_token: refresh
+  });
+
+  // CRÍTICO: Actualizar AMBOS tokens
+  // El viejo refresh token ya NO es válido (fue revocado automáticamente)
+  authState.access = data.access_token;
+  authState.refresh = data.refresh_token;
+  authState.user = data.user; // Actualizar datos del usuario también
+
+  // Guardar el NUEVO refresh token
+  setStoredRefresh(data.refresh_token);
+
+  return data;
+}
+
+/**
+ * Cerrar sesión
+ * Endpoint: POST /logout
+ * 
+ * Revoca la sesión actual en el servidor
+ */
+async function logout() {
+  try {
+    // Intentar hacer logout en el servidor
+    await apiCall("/logout", "POST");
+  } catch (err) {
+    // Continuar con logout local incluso si el servidor falla
+    console.error("Error al hacer logout en servidor:", err);
+  } finally {
+    // Limpiar estado local
+    authState = {
+      access: null,
+      refresh: null,
+      user: null
+    };
+    setStoredRefresh(null);
+  }
+}
+
+// ============================================================================
+// INICIALIZACIÓN Y VERIFICACIÓN DE AUTENTICACIÓN
+// ============================================================================
+
+/**
+ * Verificar si hay una sesión activa al cargar la página
+ * Si hay refresh token, intenta renovar el access token
+ */
+async function checkAuth() {
+  const refresh = getStoredRefresh();
+
+  if (refresh) {
+    try {
+      // Intentar refrescar el access token
+      await refreshToken();
+      
+      // Si tiene éxito, redirigir al dashboard
+      window.location.href = "dashboard.html";
+    } catch (err) {
+      // Si falla, limpiar todo y quedarse en login
+      console.error("Error al verificar autenticación:", err);
+      authState = {
+        access: null,
+        refresh: null,
+        user: null
+      };
+      setStoredRefresh(null);
+    }
+  }
+}
+
+// ============================================================================
+// INTERFAZ DE USUARIO - LOGIN
+// ============================================================================
+
+function renderLogin() {
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  let error = "";
+
+  const container = el(
+    "div",
+    {
+      style: {
+        backgroundColor: "var(--color-white)",
+        padding: "var(--space-8)",
+        borderRadius: "var(--radius-lg)",
+        boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+        maxWidth: "400px",
+        width: "100%"
+      }
+    },
+    [
+      el(
+        "h1",
+        {
+          style: {
+            fontSize: "var(--font-3xl)",
+            fontWeight: "700",
+            marginBottom: "var(--space-2)",
+            textAlign: "center",
+            color: "var(--color-primary)"
+          }
+        },
+        "Iniciar Sesión"
+      ),
+      el(
+        "p",
+        {
+          style: {
+            textAlign: "center",
+            color: "var(--color-gray-500)",
+            marginBottom: "var(--space-6)",
+            fontSize: "var(--font-sm)"
+          }
+        },
+        "Accede a tu cuenta"
+      ),
+      el(
+        "form",
+        {
+          id: "loginForm",
+          onsubmit: async e => {
+            e.preventDefault();
+            const form = new FormData(e.target);
+            const email = form.get("email");
+            const password = form.get("password");
+
+            if (!email || !password) {
+              error = "Email y contraseña son requeridos";
+              updateError();
+              return;
             }
 
-            app.appendChild(container);
-            updateError();
-        }
+            const button = document.querySelector("button[type=submit]");
+            button.disabled = true;
+            button.textContent = "Iniciando...";
 
-        checkAuth().then(() => renderLogin());
-    </script>
+            try {
+              await login(email, password);
+              window.location.href = "dashboard.html";
+            } catch (err) {
+              error = err.message;
+              updateError();
+              button.disabled = false;
+              button.textContent = "Iniciar Sesión";
+            }
+          }
+        },
+        [
+          el(
+            "div",
+            {
+              style: {
+                marginBottom: "var(--space-4)"
+              }
+            },
+            [
+              el("label", { for: "email" }, "Email"),
+              el("input", {
+                type: "email",
+                id: "email",
+                name: "email",
+                placeholder: "tu@email.com",
+                required: true,
+                autocomplete: "email"
+              })
+            ]
+          ),
+          el(
+            "div",
+            {
+              style: {
+                marginBottom: "var(--space-4)"
+              }
+            },
+            [
+              el("label", { for: "password" }, "Contraseña"),
+              el("input", {
+                type: "password",
+                id: "password",
+                name: "password",
+                placeholder: "••••••••",
+                required: true,
+                autocomplete: "current-password"
+              })
+            ]
+          ),
+          el("div", { id: "errorMsg" }),
+          el("button", { type: "submit" }, "Iniciar Sesión")
+        ]
+      ),
+      el(
+        "div",
+        {
+          style: {
+            marginTop: "var(--space-4)",
+            textAlign: "center"
+          }
+        },
+        [
+          el(
+            "span",
+            {
+              style: {
+                fontSize: "var(--font-sm)",
+                color: "var(--color-gray-500)"
+              }
+            },
+            "¿No tienes cuenta? "
+          ),
+          el(
+            "span",
+            {
+              className: "link",
+              onclick: () => renderRegister()
+            },
+            "Regístrate"
+          )
+        ]
+      )
+    ]
+  );
+
+  function updateError() {
+    const box = document.getElementById("errorMsg");
+    box.innerHTML = "";
+    if (error) {
+      box.className = "error";
+      box.textContent = error;
+    }
+  }
+
+  app.appendChild(container);
+  updateError();
+}
+
+// ============================================================================
+// INTERFAZ DE USUARIO - REGISTRO
+// ============================================================================
+
+function renderRegister() {
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  let error = "";
+
+  const container = el(
+    "div",
+    {
+      style: {
+        backgroundColor: "var(--color-white)",
+        padding: "var(--space-8)",
+        borderRadius: "var(--radius-lg)",
+        boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+        maxWidth: "400px",
+        width: "100%"
+      }
+    },
+    [
+      el(
+        "h1",
+        {
+          style: {
+            fontSize: "var(--font-3xl)",
+            fontWeight: "700",
+            marginBottom: "var(--space-2)",
+            textAlign: "center",
+            color: "var(--color-primary)"
+          }
+        },
+        "Crear Cuenta"
+      ),
+      el(
+        "p",
+        {
+          style: {
+            textAlign: "center",
+            color: "var(--color-gray-500)",
+            marginBottom: "var(--space-6)",
+            fontSize: "var(--font-sm)"
+          }
+        },
+        "Regístrate para comenzar"
+      ),
+      el(
+        "form",
+        {
+          id: "registerForm",
+          onsubmit: async e => {
+            e.preventDefault();
+            const form = new FormData(e.target);
+            const email = form.get("email");
+            const password = form.get("password");
+            const nombre = form.get("nombre");
+            const negocio = form.get("negocio");
+
+            if (!email || !password || !nombre || !negocio) {
+              error = "Todos los campos son requeridos";
+              updateError();
+              return;
+            }
+
+            if (password.length < 6) {
+              error = "La contraseña debe tener al menos 6 caracteres";
+              updateError();
+              return;
+            }
+
+            const button = document.querySelector("button[type=submit]");
+            button.disabled = true;
+            button.textContent = "Registrando...";
+
+            try {
+              await register(email, password, nombre, negocio);
+              window.location.href = "dashboard.html";
+            } catch (err) {
+              error = err.message;
+              updateError();
+              button.disabled = false;
+              button.textContent = "Crear Cuenta";
+            }
+          }
+        },
+        [
+          el(
+            "div",
+            {
+              style: {
+                marginBottom: "var(--space-4)"
+              }
+            },
+            [
+              el("label", { for: "nombre" }, "Nombre Completo"),
+              el("input", {
+                type: "text",
+                id: "nombre",
+                name: "nombre",
+                placeholder: "Juan Pérez",
+                required: true,
+                autocomplete: "name"
+              })
+            ]
+          ),
+          el(
+            "div",
+            {
+              style: {
+                marginBottom: "var(--space-4)"
+              }
+            },
+            [
+              el("label", { for: "negocio" }, "Nombre del Negocio"),
+              el("input", {
+                type: "text",
+                id: "negocio",
+                name: "negocio",
+                placeholder: "Mi Empresa SA",
+                required: true
+              })
+            ]
+          ),
+          el(
+            "div",
+            {
+              style: {
+                marginBottom: "var(--space-4)"
+              }
+            },
+            [
+              el("label", { for: "email" }, "Email"),
+              el("input", {
+                type: "email",
+                id: "email",
+                name: "email",
+                placeholder: "tu@email.com",
+                required: true,
+                autocomplete: "email"
+              })
+            ]
+          ),
+          el(
+            "div",
+            {
+              style: {
+                marginBottom: "var(--space-4)"
+              }
+            },
+            [
+              el("label", { for: "password" }, "Contraseña"),
+              el("input", {
+                type: "password",
+                id: "password",
+                name: "password",
+                placeholder: "••••••••",
+                required: true,
+                autocomplete: "new-password",
+                minlength: "6"
+              })
+            ]
+          ),
+          el("div", { id: "errorMsg" }),
+          el("button", { type: "submit" }, "Crear Cuenta")
+        ]
+      ),
+      el(
+        "div",
+        {
+          style: {
+            marginTop: "var(--space-4)",
+            textAlign: "center"
+          }
+        },
+        [
+          el(
+            "span",
+            {
+              style: {
+                fontSize: "var(--font-sm)",
+                color: "var(--color-gray-500)"
+              }
+            },
+            "¿Ya tienes cuenta? "
+          ),
+          el(
+            "span",
+            {
+              className: "link",
+              onclick: () => renderLogin()
+            },
+            "Inicia Sesión"
+          )
+        ]
+      )
+    ]
+  );
+
+  function updateError() {
+    const box = document.getElementById("errorMsg");
+    box.innerHTML = "";
+    if (error) {
+      box.className = "error";
+      box.textContent = error;
+    }
+  }
+
+  app.appendChild(container);
+  updateError();
+}
+
+// ============================================================================
+// INICIALIZACIÓN DE LA APLICACIÓN
+// ============================================================================
+
+// Verificar autenticación al cargar y luego mostrar login si no está autenticado
+checkAuth().then(() => renderLogin());
+</script>
 </body>
 </html>
