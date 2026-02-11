@@ -3,9 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dashboard</title>
+    <title>Auth - Login</title>
     <link rel="stylesheet" href="m.css" />
+    <style>
+      body {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .error {
+        color: #dc2626;
+        font-size: var(--font-sm);
+        margin-top: var(--space-1);
+      }
+
+      .link {
+        color: var(--color-primary);
+        cursor: pointer;
+        font-size: var(--font-sm);
+        text-decoration: underline;
+      }
+
+      .link:hover {
+        color: var(--color-primary-dark);
+      }
+    </style>
   </head>
+
   <body>
     <div id="app"></div>
 
@@ -50,44 +76,61 @@
 
         const response = await fetch(`${API_BASE}${endpoint}`, options);
 
-        if (response.status === 401 && endpoint !== "/refresh") {
-          try {
-            await refreshToken();
-
-            const retry = await fetch(`${API_BASE}${endpoint}`, {
-              ...options,
-              headers: {
-                ...options.headers,
-                Authorization: `Bearer ${authState.access}`,
-              },
-            });
-
-            if (!retry.ok) {
-              const error = await retry
-                .json()
-                .catch(() => ({ error: "Error desconocido" }));
-              throw new Error(
-                error.error || error.message || "Error en la petición"
-              );
-            }
-
-            return retry.json();
-          } catch (err) {
-            logout();
-            return null;
-          }
-        }
-
         if (!response.ok) {
           const error = await response
             .json()
             .catch(() => ({ error: "Error desconocido" }));
+
           throw new Error(
             error.error || error.message || "Error en la petición"
           );
         }
 
         return response.json();
+      }
+
+      async function register(email, password, companyName) {
+        return await apiCall("/register", "POST", {
+          email,
+          password,
+          company_name: companyName,
+        });
+      }
+
+      async function login(email, password) {
+        console.log("🔐 Intentando login...");
+
+        const data = await apiCall("/login", "POST", {
+          email,
+          password,
+        });
+
+        console.log("✅ Login exitoso:", data);
+        console.log("📦 Datos completos:", JSON.stringify(data, null, 2));
+        console.log("🔑 Access token:", data.access_token);
+        console.log("🔄 Refresh token:", data.refresh_token);
+
+        authState = {
+          access: data.access_token,
+          refresh: data.refresh_token,
+          user: data.user,
+        };
+
+        setStoredRefresh(data.refresh_token);
+
+        console.log(
+          "💾 Refresh token guardado:",
+          localStorage.getItem("refresh_token")
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        console.log(
+          "✅ Verificando storage:",
+          localStorage.getItem("refresh_token")
+        );
+
+        return data;
       }
 
       async function refreshToken() {
@@ -122,259 +165,429 @@
         }
       }
 
-      async function initAuth() {
-        console.log("📱 Dashboard cargado");
-        console.log("🔍 Buscando refresh token en localStorage...");
-
+      async function checkAuth() {
         const refresh = getStoredRefresh();
-
-        console.log(
-          "🔍 Refresh token encontrado:",
-          refresh ? `Sí (${refresh.substring(0, 20)}...)` : "No"
-        );
-
-        if (!refresh) {
-          console.log("❌ No hay refresh token en dashboard");
-          window.location.replace("index.html");
-          return;
-        }
+        if (!refresh) return false;
 
         try {
-          console.log("🔄 Intentando refresh token...");
-          const data = await refreshToken();
-
-          console.log("✅ Refresh exitoso:", data);
-
-          authState.user = data.user || { email: "usuario@example.com" };
-
-          renderDashboard();
-          startTokenRefresh();
+          await refreshToken();
+          console.log("✅ Auth válida, redirigiendo a dashboard");
+          window.location.replace("dashboard.html");
+          return true;
         } catch (err) {
-          console.error("❌ Error en initAuth:", err);
-          setStoredRefresh(null);
+          console.error("❌ Error en checkAuth:", err);
           authState = { access: null, refresh: null, user: null };
-          window.location.replace("index.html");
+          setStoredRefresh(null);
+          return false;
         }
       }
 
-      function renderDashboard() {
+      function renderLogin() {
         const app = document.getElementById("app");
         app.innerHTML = "";
 
-        const layout = el(
-          "div",
-          { style: { minHeight: "100vh" } },
-          [
-            el(
-              "nav",
-              {
-                style: {
-                  backgroundColor: "var(--color-primary)",
-                  padding: "var(--space-4)",
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                },
-              },
-              [
-                el(
-                  "div",
-                  {
-                    style: {
-                      maxWidth: "1200px",
-                      margin: "0 auto",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    },
-                  },
-                  [
-                    el(
-                      "h1",
-                      {
-                        style: {
-                          color: "var(--color-white)",
-                          fontSize: "var(--font-2xl)",
-                          fontWeight: "700",
-                          margin: "0",
-                        },
-                      },
-                      "Dashboard"
-                    ),
-                    el(
-                      "button",
-                      {
-                        onclick: () => logout(),
-                        style: {
-                          backgroundColor:
-                            "var(--color-primary-dark)",
-                        },
-                      },
-                      "Cerrar Sesión"
-                    ),
-                  ]
-                ),
-              ]
-            ),
-            el(
-              "main",
-              {
-                style: {
-                  maxWidth: "1200px",
-                  margin: "var(--space-8) auto",
-                  padding: "0 var(--space-4)",
-                },
-              },
-              [
-                el(
-                  "div",
-                  {
-                    style: {
-                      backgroundColor: "var(--color-white)",
-                      padding: "var(--space-8)",
-                      borderRadius: "var(--radius-lg)",
-                      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                    },
-                  },
-                  [
-                    el(
-                      "h2",
-                      {
-                        style: {
-                          fontSize: "var(--font-3xl)",
-                          fontWeight: "700",
-                          marginBottom: "var(--space-4)",
-                          color: "var(--color-primary)",
-                        },
-                      },
-                      "Bienvenido"
-                    ),
-                    el(
-                      "div",
-                      {
-                        style: {
-                          backgroundColor:
-                            "var(--color-primary-light)",
-                          padding: "var(--space-6)",
-                          borderRadius: "var(--radius-md)",
-                          marginBottom: "var(--space-6)",
-                        },
-                      },
-                      [
-                        el(
-                          "p",
-                          {
-                            style: {
-                              fontSize: "var(--font-lg)",
-                              color: "var(--color-gray-700)",
-                              marginBottom: "var(--space-2)",
-                            },
-                          },
-                          [
-                            el("strong", {}, "Email: "),
-                            authState.user?.email || "Cargando...",
-                          ]
-                        ),
-                        el(
-                          "p",
-                          {
-                            style: {
-                              fontSize: "var(--font-base)",
-                              color: "var(--color-gray-500)",
-                            },
-                          },
-                          "Autenticación exitosa con refresh token automático"
-                        ),
-                      ]
-                    ),
-                    el(
-                      "div",
-                      {
-                        style: {
-                          display: "grid",
-                          gridTemplateColumns:
-                            "repeat(auto-fit, minmax(250px, 1fr))",
-                          gap: "var(--space-4)",
-                        },
-                      },
-                      [
-                        buildFeature(
-                          "✓ Login",
-                          "Sistema de autenticación completo"
-                        ),
-                        buildFeature(
-                          "✓ Registro",
-                          "Creación de nuevas cuentas"
-                        ),
-                        buildFeature(
-                          "✓ Refresh",
-                          "Renovación automática de tokens"
-                        ),
-                      ]
-                    ),
-                  ]
-                ),
-              ]
-            ),
-          ]
-        );
+        let errorMessage = "";
 
-        app.appendChild(layout);
-      }
-
-      function buildFeature(title, description) {
-        return el(
+        const card = el(
           "div",
           {
             style: {
-              backgroundColor: "var(--color-gray-50)",
-              padding: "var(--space-6)",
-              borderRadius: "var(--radius-md)",
-              border: "1px solid var(--color-gray-200)",
+              backgroundColor: "var(--color-white)",
+              padding: "var(--space-8)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+              maxWidth: "400px",
+              width: "100%",
             },
           },
           [
             el(
-              "h3",
+              "h1",
               {
                 style: {
-                  fontSize: "var(--font-xl)",
-                  fontWeight: "600",
+                  fontSize: "var(--font-3xl)",
+                  fontWeight: "700",
                   marginBottom: "var(--space-2)",
+                  textAlign: "center",
                   color: "var(--color-primary)",
                 },
               },
-              title
+              "Iniciar Sesión"
             ),
             el(
               "p",
               {
                 style: {
+                  textAlign: "center",
+                  color: "var(--color-gray-500)",
+                  marginBottom: "var(--space-6)",
                   fontSize: "var(--font-sm)",
-                  color: "var(--color-gray-600)",
                 },
               },
-              description
+              "Accede a tu cuenta"
+            ),
+            el(
+              "form",
+              {
+                id: "loginForm",
+                onsubmit: async (event) => {
+                  event.preventDefault();
+
+                  const formData = new FormData(event.target);
+                  const email = formData.get("email");
+                  const password = formData.get("password");
+
+                  if (!email || !password) {
+                    errorMessage =
+                      "Email y contraseña son requeridos";
+                    updateError();
+                    return;
+                  }
+
+                  const button =
+                    document.querySelector("button[type=submit]");
+                  button.disabled = true;
+                  button.textContent = "Iniciando...";
+
+                  try {
+                    await login(email, password);
+
+                    console.log(
+                      "🚀 Redirigiendo a dashboard..."
+                    );
+
+                    await new Promise((resolve) =>
+                      setTimeout(resolve, 100)
+                    );
+
+                    window.location.replace(
+                      "dashboard.html"
+                    );
+                  } catch (err) {
+                    errorMessage = err.message;
+                    updateError();
+                    button.disabled = false;
+                    button.textContent = "Iniciar Sesión";
+                  }
+                },
+              },
+              [
+                el(
+                  "div",
+                  { style: { marginBottom: "var(--space-4)" } },
+                  [
+                    el("label", { for: "email" }, "Email"),
+                    el("input", {
+                      type: "email",
+                      id: "email",
+                      name: "email",
+                      placeholder: "tu@email.com",
+                      required: true,
+                      autocomplete: "email",
+                    }),
+                  ]
+                ),
+                el(
+                  "div",
+                  { style: { marginBottom: "var(--space-4)" } },
+                  [
+                    el("label", { for: "password" }, "Contraseña"),
+                    el("input", {
+                      type: "password",
+                      id: "password",
+                      name: "password",
+                      placeholder: "••••••••",
+                      required: true,
+                      autocomplete: "current-password",
+                    }),
+                  ]
+                ),
+                el("div", { id: "errorMsg" }),
+                el(
+                  "button",
+                  { type: "submit" },
+                  "Iniciar Sesión"
+                ),
+              ]
+            ),
+            el(
+              "div",
+              {
+                style: {
+                  marginTop: "var(--space-4)",
+                  textAlign: "center",
+                },
+              },
+              [
+                el(
+                  "span",
+                  {
+                    style: {
+                      fontSize: "var(--font-sm)",
+                      color: "var(--color-gray-500)",
+                    },
+                  },
+                  "¿No tienes cuenta? "
+                ),
+                el(
+                  "span",
+                  {
+                    className: "link",
+                    onclick: () => renderRegister(),
+                  },
+                  "Regístrate"
+                ),
+              ]
             ),
           ]
         );
-      }
 
-      let refreshInterval;
+        function updateError() {
+          const container =
+            document.getElementById("errorMsg");
+          container.innerHTML = "";
 
-      async function startTokenRefresh() {
-        if (refreshInterval) clearInterval(refreshInterval);
-
-        refreshInterval = setInterval(async () => {
-          try {
-            await refreshToken();
-            console.log("Token renovado automáticamente");
-          } catch (err) {
-            console.error("Error al renovar token:", err);
-            logout();
+          if (errorMessage) {
+            container.className = "error";
+            container.textContent = errorMessage;
           }
-        }, 42e5);
+        }
+
+        app.appendChild(card);
+        updateError();
       }
 
-      initAuth();
+      function renderRegister() {
+        const app = document.getElementById("app");
+        app.innerHTML = "";
+
+        let errorMessage = "";
+
+        const card = el(
+          "div",
+          {
+            style: {
+              backgroundColor: "var(--color-white)",
+              padding: "var(--space-8)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+              maxWidth: "400px",
+              width: "100%",
+            },
+          },
+          [
+            el(
+              "h1",
+              {
+                style: {
+                  fontSize: "var(--font-3xl)",
+                  fontWeight: "700",
+                  marginBottom: "var(--space-2)",
+                  textAlign: "center",
+                  color: "var(--color-primary)",
+                },
+              },
+              "Crear Cuenta"
+            ),
+            el(
+              "p",
+              {
+                style: {
+                  textAlign: "center",
+                  color: "var(--color-gray-500)",
+                  marginBottom: "var(--space-6)",
+                  fontSize: "var(--font-sm)",
+                },
+              },
+              "Regístrate para comenzar"
+            ),
+            el(
+              "form",
+              {
+                id: "registerForm",
+                onsubmit: async (event) => {
+                  event.preventDefault();
+
+                  const formData = new FormData(event.target);
+                  const email = formData.get("email");
+                  const password =
+                    formData.get("password");
+                  const companyName =
+                    formData.get("company_name");
+
+                  if (!email || !password || !companyName) {
+                    errorMessage =
+                      "Todos los campos son requeridos";
+                    updateError();
+                    return;
+                  }
+
+                  if (password.length < 8) {
+                    errorMessage =
+                      "La contraseña debe tener al menos 8 caracteres";
+                    updateError();
+                    return;
+                  }
+
+                  const button =
+                    document.querySelector("button[type=submit]");
+                  button.disabled = true;
+                  button.textContent = "Registrando...";
+
+                  try {
+                    await register(
+                      email,
+                      password,
+                      companyName
+                    );
+
+                    button.textContent =
+                      "Iniciando sesión...";
+
+                    await login(email, password);
+
+                    console.log(
+                      "🚀 Redirigiendo a dashboard..."
+                    );
+
+                    await new Promise((resolve) =>
+                      setTimeout(resolve, 100)
+                    );
+
+                    window.location.replace(
+                      "dashboard.html"
+                    );
+                  } catch (err) {
+                    errorMessage = err.message;
+                    updateError();
+                    button.disabled = false;
+                    button.textContent = "Crear Cuenta";
+                  }
+                },
+              },
+              [
+                el(
+                  "div",
+                  { style: { marginBottom: "var(--space-4)" } },
+                  [
+                    el(
+                      "label",
+                      { for: "company_name" },
+                      "Nombre del Negocio"
+                    ),
+                    el("input", {
+                      type: "text",
+                      id: "company_name",
+                      name: "company_name",
+                      placeholder: "Mi Empresa SA",
+                      required: true,
+                    }),
+                  ]
+                ),
+                el(
+                  "div",
+                  { style: { marginBottom: "var(--space-4)" } },
+                  [
+                    el("label", { for: "email" }, "Email"),
+                    el("input", {
+                      type: "email",
+                      id: "email",
+                      name: "email",
+                      placeholder: "tu@email.com",
+                      required: true,
+                      autocomplete: "email",
+                    }),
+                  ]
+                ),
+                el(
+                  "div",
+                  { style: { marginBottom: "var(--space-4)" } },
+                  [
+                    el(
+                      "label",
+                      { for: "password" },
+                      "Contraseña"
+                    ),
+                    el("input", {
+                      type: "password",
+                      id: "password",
+                      name: "password",
+                      placeholder: "••••••••",
+                      required: true,
+                      autocomplete: "new-password",
+                      minlength: "8",
+                    }),
+                  ]
+                ),
+                el("div", { id: "errorMsg" }),
+                el(
+                  "button",
+                  { type: "submit" },
+                  "Crear Cuenta"
+                ),
+              ]
+            ),
+            el(
+              "div",
+              {
+                style: {
+                  marginTop: "var(--space-4)",
+                  textAlign: "center",
+                },
+              },
+              [
+                el(
+                  "span",
+                  {
+                    style: {
+                      fontSize: "var(--font-sm)",
+                      color: "var(--color-gray-500)",
+                    },
+                  },
+                  "¿Ya tienes cuenta? "
+                ),
+                el(
+                  "span",
+                  {
+                    className: "link",
+                    onclick: () => renderLogin(),
+                  },
+                  "Inicia Sesión"
+                ),
+              ]
+            ),
+          ]
+        );
+
+        function updateError() {
+          const container =
+            document.getElementById("errorMsg");
+          container.innerHTML = "";
+
+          if (errorMessage) {
+            container.className = "error";
+            container.textContent = errorMessage;
+          }
+        }
+
+        app.appendChild(card);
+        updateError();
+      }
+
+      checkAuth()
+        .then((isValid) => {
+          if (!isValid) renderLogin();
+        })
+        .catch(() => {
+          console.error("Error crítico en checkAuth");
+          authState = {
+            access: null,
+            refresh: null,
+            user: null,
+          };
+          setStoredRefresh(null);
+          renderLogin();
+        });
     </script>
   </body>
 </html>
