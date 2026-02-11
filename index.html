@@ -228,19 +228,13 @@ async function refreshToken() {
  */
 async function logout() {
   try {
-    // Intentar hacer logout en el servidor
     await apiCall("/logout", "POST");
   } catch (err) {
-    // Continuar con logout local incluso si el servidor falla
     console.error("Error al hacer logout en servidor:", err);
   } finally {
-    // Limpiar estado local
-    authState = {
-      access: null,
-      refresh: null,
-      user: null
-    };
+    authState = { access: null, refresh: null, user: null };
     setStoredRefresh(null);
+    window.location.replace("index.html"); // ← replace, no href
   }
 }
 
@@ -254,27 +248,19 @@ async function logout() {
  */
 async function checkAuth() {
   const refresh = getStoredRefresh();
+  if (!refresh) return false; // sin sesión, mostrar login
 
-  if (refresh) {
-    try {
-      // Intentar refrescar el access token
-      await refreshToken();
-      
-      // Si tiene éxito, redirigir al dashboard
-      window.location.href = "dashboard.html";
-    } catch (err) {
-      // Si falla, limpiar todo y quedarse en login
-      console.error("Error al verificar autenticación:", err);
-      authState = {
-        access: null,
-        refresh: null,
-        user: null
-      };
-      setStoredRefresh(null);
-    }
+  try {
+    await refreshToken();
+    window.location.replace("dashboard.html"); // replace = sin historial
+    return true; // hay sesión activa, NO mostrar login
+  } catch (err) {
+    console.error("Error al verificar autenticación:", err);
+    authState = { access: null, refresh: null, user: null };
+    setStoredRefresh(null);
+    return false;
   }
 }
-
 // ============================================================================
 // INTERFAZ DE USUARIO - LOGIN
 // ============================================================================
@@ -644,8 +630,9 @@ function renderRegister() {
 // INICIALIZACIÓN DE LA APLICACIÓN
 // ============================================================================
 
-// Verificar autenticación al cargar y luego mostrar login si no está autenticado
-checkAuth().then(() => renderLogin());
+checkAuth().then(isAuthenticated => {
+  if (!isAuthenticated) renderLogin();
+});
 </script>
 
 </body>
