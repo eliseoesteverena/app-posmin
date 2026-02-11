@@ -38,114 +38,103 @@
         async function apiCall(endpoint, method = "GET", body = null) {
             const options = {
                 method,
-                headers: {
-                    "Content-Type": "application/json"
-                }
+                headers: { "Content-Type": "application/json" }
             };
 
             if (authState.access) {
                 options.headers.Authorization = `Bearer ${authState.access}`;
             }
-
             if (body) {
                 options.body = JSON.stringify(body);
             }
 
             const response = await fetch(`${API_BASE}${endpoint}`, options);
 
+            // 401: intentar refresh UNA sola vez
             if (response.status === 401 && endpoint !== "/auth/refresh") {
                 try {
-                    await refreshToken();
-
-                    const retry = await fetch(`${API_BASE}${endpoint}`, {
-                        ...options,
-                        headers: {
-                            ...options.headers,
-                            Authorization: `Bearer ${authState.access}`
-                        }
-                    });
-
-                    if (!retry.ok) {
-                        const error = await retry.json().catch(() => ({
-                            error: "Error desconocido"
-                        }));
-
-                        throw new Error(
-                            error.error || error.message || "Error en la petición"
-                        );
-                    }
-
-                    return retry.json();
-                } catch (err) {
-                    logout();
-                    return null;
+                await refreshToken();
+                } catch {
+                // El refresh falló — limpiar estado pero NO redirigir desde aquí
+                setStoredRefresh(null);
+                authState = { access: null, refresh: null, user: null };
+                throw new Error("Sesión expirada");  // que el caller decida qué hacer
                 }
+
+                // Reintentar con nuevo token
+                options.headers.Authorization = `Bearer ${authState.access}`;
+                const retry = await fetch(`${API_BASE}${endpoint}`, options);
+                if (!retry.ok) {
+                const error = await retry.json().catch(() => ({}));
+                throw new Error(error.error || "Error en la petición");
+                }
+                return retry.json();
             }
 
             if (!response.ok) {
-                const error = await response.json().catch(() => ({
-                    error: "Error desconocido"
-                }));
-
-                throw new Error(
-                    error.error || error.message || "Error en la petición"
-                );
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.error || error.message || "Error en la petición");
             }
 
             return response.json();
-        }
-
-        async function refreshToken() {
-            const refresh = getStoredRefresh();
-
-            if (!refresh) {
-                throw new Error("No hay refresh token");
             }
+        
+        async function refreshToken() {
+        const refresh = getStoredRefresh();
+        if (!refresh) throw new Error("No hay refresh token");
 
-            const data = await apiCall("/auth/refresh", "POST", {
-                refresh_token: refresh
-            });
+        // Usá la URL exacta sin trailing slash, y redirect: 'error' 
+        // para que no siga el 308 silenciosamente
+        const response = await fetch(`${API_BASE}/auth/refresh`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: refresh }),
+            redirect: "error"   // ← falla explícitamente si hay redirect
+        });
 
-            authState.access = data.access_token;
-            authState.refresh = data.refresh_token;
-
-            setStoredRefresh(data.refresh_token);
-
-            return data;
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || "Refresh failed");
         }
 
+        const data = await response.json();
+        authState.access  = data.access_token;
+        authState.refresh = data.refresh_token;
+        setStoredRefresh(data.refresh_token);
+        return data;
+        }
+
+        // logout limpio — sin lógica de redirección condicional
         function logout() {
-            authState = {
-                access: null,
-                refresh: null,
-                user: null
-            };
-
-            setStoredRefresh(null);
-            window.location.href = "index.html";
+        authState = { access: null, refresh: null, user: null };
+        setStoredRefresh(null);
+        window.location.replace("index.html");
         }
+
 
         async function initAuth() {
             const refresh = getStoredRefresh();
 
             if (!refresh) {
-                logout();
+                // No hay sesión, ir a login sin loop
+                window.location.replace("index.html");
                 return;
             }
 
             try {
                 const data = await refreshToken();
-
-                authState.user = data.user || {
-                    email: "usuario@example.com"
-                };
-
+                authState.user = data.user || { email: "usuario@example.com" };
                 renderDashboard();
+                startTokenRefresh();
             } catch (err) {
-                logout();
+                // Limpiar sin redirigir si ya estamos en index
+                setStoredRefresh(null);
+                authState = { access: null, refresh: null, user: null };
+                if (!window.location.pathname.endsWith("index.html")) {
+                window.location.replace("index.html");
+                }
             }
-        }
-
+            }
         function renderDashboard() {
             const app = document.getElementById("app");
 
@@ -318,7 +307,8 @@
             }, 42e5);
         }
 
-        initAuth().then(() => startTokenRefresh());
+        
+        initAuth();
     </script>
 </body>
 </html>
