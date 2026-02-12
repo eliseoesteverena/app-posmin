@@ -2,214 +2,58 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Dashboard</title>
-    <style>
-      <style>
-    body { margin: 0; font-family: sans-serif; }
-    .loader {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      background: #f5f5f5;
-    }
-    .spinner {
-      width: 50px;
-      height: 50px;
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid #3498db;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  </style>
-    </style>
     <link rel="stylesheet" href="m.css" />
   </head>
+
   <body>
-    <div id="app">
-      <div class="loader">
-      <div class="spinner"></div>
-    </div>
-    </div>
+    <div id="app"></div>
 
     <script type="module">
       import { el } from "./mount.js";
+      import {
+        initAuth,
+        requireAuth,
+        logout,
+        getUser,
+        apiRequest,
+      } from "./auth.js";
 
-      const API_BASE = window.location.hostname.includes("localhost")
-        ? "http://localhost:8787"
-        : "https://posmin-auth-service.eliseo050595.workers.dev";
+      requireAuth();
 
-      let authState = {
-        access: null,
-        refresh: null,
-        user: null,
-      };
+      let productos = [];
 
-      function getStoredRefresh() {
-        return localStorage.getItem("refresh_token");
-      }
-
-      function setStoredRefresh(token) {
-        token
-          ? localStorage.setItem("refresh_token", token)
-          : localStorage.removeItem("refresh_token");
-      }
-
-      async function apiCall(endpoint, method = "GET", body = null) {
-        const options = {
-          method,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        };
-
-        if (authState.access) {
-          options.headers.Authorization = `Bearer ${authState.access}`;
-        }
-
-        if (body) {
-          options.body = JSON.stringify(body);
-        }
-
-        const response = await fetch(`${API_BASE}${endpoint}`, options);
-
-        if (response.status === 401 && endpoint !== "/refresh") {
-          try {
-            await refreshToken();
-
-            const retryResponse = await fetch(`${API_BASE}${endpoint}`, {
-              ...options,
-              headers: {
-                ...options.headers,
-                Authorization: `Bearer ${authState.access}`,
-              },
-            });
-
-            if (!retryResponse.ok) {
-              const errorData = await retryResponse
-                .json()
-                .catch(() => ({ error: "Error desconocido" }));
-              throw new Error(
-                errorData.error ||
-                  errorData.message ||
-                  "Error en la petición"
-              );
-            }
-
-            return retryResponse.json();
-          } catch (error) {
-            logout();
-            return null;
-          }
-        }
-
-        if (!response.ok) {
-          const errorData = await response
-            .json()
-            .catch(() => ({ error: "Error desconocido" }));
-          throw new Error(
-            errorData.error || errorData.message || "Error en la petición"
-          );
-        }
-
-        return response.json();
-      }
-
-      async function refreshToken() {
-        const storedRefresh = getStoredRefresh();
-        if (!storedRefresh) {
-          throw new Error("No hay refresh token");
-        }
-
-        console.log("🔄 Refrescando token...");
-
-        const data = await apiCall("/refresh", "POST", {
-          refresh_token: storedRefresh,
-        });
-
-        console.log("✅ Token refrescado");
-
-        authState.access = data.accessToken;
-        authState.refresh = data.refreshToken;
-        setStoredRefresh(data.refreshToken);
-
-        return data;
-      }
-
-      async function logout() {
+      async function cargarProductos() {
         try {
-          await apiCall("/logout", "POST");
+          const res = await apiRequest("/api/products");
+          productos = res.productos || res.data || [];
         } catch (error) {
-          console.error("Error al hacer logout:", error);
-        } finally {
-          authState = { access: null, refresh: null, user: null };
-          setStoredRefresh(null);
-          window.location.replace("index.html");
+          console.error("Error:", error);
         }
       }
 
-      async function initAuth() {
-        console.log("📱 Dashboard cargado");
-        console.log("🔍 Buscando refresh token en localStorage...");
-
-        const storedRefresh = getStoredRefresh();
-
-        console.log(
-          "🔍 Refresh token encontrado:",
-          storedRefresh
-            ? `Sí (${storedRefresh.substring(0, 20)}...)`
-            : "No"
-        );
-
-        if (!storedRefresh) {
-          console.log("❌ No hay refresh token en dashboard");
-          window.location.replace("index.html");
-          return;
-        }
-
-        try {
-          console.log("🔄 Intentando refresh token...");
-          const data = await refreshToken();
-          console.log("✅ Refresh exitoso:", data);
-
-          authState.user = data.user || { email: "usuario@example.com" };
-
-          renderDashboard();
-          startTokenRefresh();
-        } catch (error) {
-          console.error("❌ Error en initAuth:", error);
-          setStoredRefresh(null);
-          authState = { access: null, refresh: null, user: null };
-          window.location.replace("index.html");
-        }
-      }
-
-      function renderDashboard() {
+      function render() {
+        const user = getUser();
         const app = document.getElementById("app");
         app.innerHTML = "";
 
-        const layout = el("div", { style: { minHeight: "100vh" } }, [
+        const container = el("div", {}, [
           el(
             "nav",
             {
               style: {
                 backgroundColor: "var(--color-primary)",
                 padding: "var(--space-4)",
-                boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                marginBottom: "var(--space-6)",
               },
             },
             [
               el(
                 "div",
                 {
+                  className: "container",
                   style: {
-                    maxWidth: "1200px",
-                    margin: "0 auto",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
@@ -220,120 +64,38 @@
                     "h1",
                     {
                       style: {
-                        color: "var(--color-white)",
-                        fontSize: "var(--font-2xl)",
-                        fontWeight: "700",
+                        color: "white",
                         margin: "0",
                       },
                     },
-                    "Dashboard"
+                    "Mi App"
                   ),
-                  el(
-                    "button",
-                    {
-                      onclick: () => logout(),
-                      style: {
-                        backgroundColor: "var(--color-primary-dark)",
-                      },
-                    },
-                    "Cerrar Sesión"
-                  ),
-                ]
-              ),
-            ]
-          ),
-          el(
-            "main",
-            {
-              style: {
-                maxWidth: "1200px",
-                margin: "var(--space-8) auto",
-                padding: "0 var(--space-4)",
-              },
-            },
-            [
-              el(
-                "div",
-                {
-                  style: {
-                    backgroundColor: "var(--color-white)",
-                    padding: "var(--space-8)",
-                    borderRadius: "var(--radius-lg)",
-                    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                  },
-                },
-                [
-                  el(
-                    "h2",
-                    {
-                      style: {
-                        fontSize: "var(--font-3xl)",
-                        fontWeight: "700",
-                        marginBottom: "var(--space-4)",
-                        color: "var(--color-primary)",
-                      },
-                    },
-                    "Bienvenido"
-                  ),
+
                   el(
                     "div",
                     {
                       style: {
-                        backgroundColor: "var(--color-primary-light)",
-                        padding: "var(--space-6)",
-                        borderRadius: "var(--radius-md)",
-                        marginBottom: "var(--space-6)",
-                      },
-                    },
-                    [
-                      el(
-                        "p",
-                        {
-                          style: {
-                            fontSize: "var(--font-lg)",
-                            color: "var(--color-gray-700)",
-                            marginBottom: "var(--space-2)",
-                          },
-                        },
-                        [
-                          el("strong", {}, "Email: "),
-                          authState.user?.email || "Cargando...",
-                        ]
-                      ),
-                      el(
-                        "p",
-                        {
-                          style: {
-                            fontSize: "var(--font-base)",
-                            color: "var(--color-gray-500)",
-                          },
-                        },
-                        "Autenticación exitosa con refresh token automático"
-                      ),
-                    ]
-                  ),
-                  el(
-                    "div",
-                    {
-                      style: {
-                        display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fit, minmax(250px, 1fr))",
+                        display: "flex",
                         gap: "var(--space-4)",
+                        alignItems: "center",
                       },
                     },
                     [
-                      buildFeature(
-                        "✓ Login",
-                        "Sistema de autenticación completo"
+                      el(
+                        "span",
+                        { style: { color: "white" } },
+                        user?.email || "Usuario"
                       ),
-                      buildFeature(
-                        "✓ Registro",
-                        "Creación de nuevas cuentas"
-                      ),
-                      buildFeature(
-                        "✓ Refresh",
-                        "Renovación automática de tokens"
+
+                      el(
+                        "button",
+                        {
+                          onclick: () => logout(),
+                          style: {
+                            backgroundColor: "var(--color-primary-dark)",
+                          },
+                        },
+                        "Salir"
                       ),
                     ]
                   ),
@@ -341,68 +103,44 @@
               ),
             ]
           ),
+
+          el("main", { className: "container" }, [
+            el(
+              "h2",
+              { style: { marginBottom: "var(--space-4)" } },
+              "Dashboard"
+            ),
+
+            el("p", {}, "Bienvenido al sistema"),
+
+            el(
+              "div",
+              { style: { marginTop: "var(--space-6)" } },
+              [
+                el("h3", {}, "Productos"),
+
+                productos.length > 0
+                  ? el(
+                      "ul",
+                      {},
+                      productos.map((p) => el("li", {}, p.nombre))
+                    )
+                  : el("p", {}, "No hay productos"),
+              ]
+            ),
+          ]),
         ]);
 
-        app.appendChild(layout);
+        app.appendChild(container);
       }
 
-      function buildFeature(title, description) {
-        return el(
-          "div",
-          {
-            style: {
-              backgroundColor: "var(--color-gray-50)",
-              padding: "var(--space-6)",
-              borderRadius: "var(--radius-md)",
-              border: "1px solid var(--color-gray-200)",
-            },
-          },
-          [
-            el(
-              "h3",
-              {
-                style: {
-                  fontSize: "var(--font-xl)",
-                  fontWeight: "600",
-                  marginBottom: "var(--space-2)",
-                  color: "var(--color-primary)",
-                },
-              },
-              title
-            ),
-            el(
-              "p",
-              {
-                style: {
-                  fontSize: "var(--font-sm)",
-                  color: "var(--color-gray-600)",
-                },
-              },
-              description
-            ),
-          ]
-        );
-      }
-
-      let refreshInterval;
-
-      async function startTokenRefresh() {
-        if (refreshInterval) {
-          clearInterval(refreshInterval);
-        }
-
-        refreshInterval = setInterval(async () => {
-          try {
-            await refreshToken();
-            console.log("Token renovado automáticamente");
-          } catch (error) {
-            console.error("Error al renovar token:", error);
-            logout();
-          }
-        }, 42e5);
-      }
-
-      initAuth();
+      initAuth()
+        .then(() => {
+          cargarProductos().then(() => render());
+        })
+        .catch(() => {
+          window.location.replace("index.html");
+        });
     </script>
   </body>
 </html>
